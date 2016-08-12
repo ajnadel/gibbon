@@ -35,7 +35,14 @@ module Gibbon
       @path_parts.join('/')
     end
 
-    def create(params: nil, headers: nil, body: nil)
+    def create(params: nil, headers: nil, body: nil, &block)
+      if @path_parts == ['batch'] && block_given?
+        puts 'WARNING Discarding given body in favor of batch builder output!' if debug && !body.nil?
+        body = batch_body_from_block(&block)
+      end
+      puts "HI"
+      puts body
+      puts "YO"
       APIRequest.new(builder: self).post(params: params, headers: headers, body: body)
     ensure
       reset
@@ -66,6 +73,22 @@ module Gibbon
     end
 
     protected
+
+    def batch_body_from_block(&block)
+      puts 'batch'
+      batch = Gibbon::Batch.new
+      batched_req = Gibbon::BatchedRequest.new(batch)
+      block.call(batched_req)
+
+      operations = batch.operations.map do |op|
+        json = { method: op[:method], path: op[:path] }
+        json[:params] = op[:params] unless op[:params].nil?
+        json[:body] = MultiJson.dump(op[:body]) unless op[:body].nil? || op[:body].is_a(String)
+        json
+      end
+
+      { operations: operations }
+    end
 
     def reset
       @path_parts = []
